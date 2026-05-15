@@ -84,7 +84,20 @@ rtsp://USER:PASS@HOST:PORT/live/channel0
 
 ## Docker
 
-Build and run with Docker Compose:
+### Build the image
+
+```bash
+chmod +x scripts/docker-build.sh
+./scripts/docker-build.sh
+```
+
+Pre-built image (after CI publish):
+
+```text
+ghcr.io/vs-cloud-technologies-private-limited/vscam:latest
+```
+
+### Run manually
 
 ```bash
 cp .env.example .env
@@ -95,25 +108,51 @@ docker compose up --build -d
 
 Open **http://localhost:8765**
 
-### LAN access from the container
+**Linux + LAN cameras** — use host networking so the container can reach your camera:
 
-The container must reach your camera on the local network.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --build
+```
 
-- **Linux:** uncomment `network_mode: host` in `docker-compose.yml` and remove the `ports` section, then `docker compose up --build -d`. Use **http://localhost:8765**.
-- **Bridge mode (default):** works if Docker can route to the camera subnet (typical on the same LAN).
-
-Run discovery inside the container (host network on Linux):
+Run discovery inside the container:
 
 ```bash
 docker compose run --rm vscam python discover_rtsp_cameras.py --cp-plus
 ```
 
-Plain Docker:
+### Auto-start on system boot (Linux)
+
+Installs to `/opt/vscam`, builds the image, and registers a **systemd** service that starts Docker Compose when the machine boots:
 
 ```bash
-docker build -t vscam .
-docker run --rm -p 8765:8765 --env-file .env -v "$(pwd)/hls:/app/hls" vscam
+cp .env.example .env   # or copy your existing .env
+# Edit .env with camera settings
+
+sudo chmod +x scripts/install-autostart.sh
+sudo ./scripts/install-autostart.sh
 ```
+
+| Command | Action |
+|---------|--------|
+| `sudo systemctl status vscam` | Service status |
+| `sudo systemctl restart vscam` | Restart container |
+| `sudo systemctl stop vscam` | Stop until next boot |
+| `sudo systemctl disable vscam` | Disable autostart |
+| `journalctl -u vscam -f` | Boot / compose logs |
+
+Custom install path:
+
+```bash
+sudo INSTALL_DIR=/home/you/VscCam ./scripts/install-autostart.sh
+```
+
+Ensure Docker starts on boot:
+
+```bash
+sudo systemctl enable docker
+```
+
+`docker-compose.yml` uses `restart: unless-stopped` so the container also restarts if Docker crashes.
 
 ## API
 

@@ -1,0 +1,5 @@
+# Override for Linux hosts: container uses the host network so it can reach cameras on LAN.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.host.yml up -d
+services:
+  vscam:
+    network_mode: host

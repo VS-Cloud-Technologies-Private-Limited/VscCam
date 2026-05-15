@@ -133,7 +133,9 @@ def low_latency_enabled() -> bool:
 
 def try_start_stream() -> None:
     global active_rtsp_path, active_rtsp_url, last_ffmpeg_error
-    onvif_path, profile = discover_onvif_stream(env)
+    configured = env.get("RTSP_PATH", "auto")
+    skip_onvif = configured.lower() not in ("auto", "onvif", "")
+    onvif_path, profile = (None, None) if skip_onvif else discover_onvif_stream(env)
     path = discover_rtsp_path(env)
     active_rtsp_path = path
     url = build_rtsp_url(env, path=path)
@@ -271,7 +273,15 @@ app = FastAPI(title="VscCam", version="1.0.0")
 @app.on_event("startup")
 def on_startup() -> None:
     HLS_DIR.mkdir(parents=True, exist_ok=True)
-    try_start_stream()
+
+    def boot_stream() -> None:
+        global last_ffmpeg_error
+        try:
+            try_start_stream()
+        except Exception as exc:
+            last_ffmpeg_error = str(exc)
+
+    threading.Thread(target=boot_stream, daemon=True).start()
     threading.Thread(target=background_retry, daemon=True).start()
 
 
@@ -330,7 +340,7 @@ def status() -> JSONResponse:
             "mjpeg_url": "/api/mjpeg",
             "snapshot_ok": snap is not None,
             "error": last_ffmpeg_error or None,
-            "onvif_profile": discover_onvif_stream(env)[1],
+            "onvif_profile": env.get("ONVIF_PROFILE"),
             "help": [
                 "This CP Plus camera uses ONVIF on port 8000 (same as your Android ONVIF app).",
                 "Stream path: /live/channel0 (main) or /live/channel1 (sub).",

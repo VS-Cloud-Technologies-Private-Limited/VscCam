@@ -1,0 +1,10 @@
+# WSL2 / Docker Desktop: bridge + published port (host network does not bind to Windows LAN IP).
+# Camera on 192.168.60.x is still reachable from the container on most WSL2 setups.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.wsl.yml up -d --build
+services:
+  vscam:
+    network_mode: bridge
+    ports:
+      - "0.0.0.0:8765:8765"
+    environment:
+      WEB_BASE_URL: http://${HOST_IP:-192.168.60.51}:8765

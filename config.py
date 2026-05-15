@@ -1,9 +1,31 @@
 from __future__ import annotations
 
 import base64
+import os
 import socket
 from pathlib import Path
 from urllib.parse import quote
+
+ENV_KEYS = (
+    "USERNAME",
+    "PASSWORD",
+    "RTSP_HOST",
+    "RTSP_PORT",
+    "RTSP_PATH",
+    "RTSP_URL",
+    "ONVIF_ENABLED",
+    "ONVIF_PORT",
+    "ONVIF_PROFILE",
+    "HTTP_PORT",
+    "HOST_IP",
+    "LOW_LATENCY",
+    "STREAM_FPS",
+    "SNAPSHOT_PATH",
+    "SNAPSHOT_URL",
+    "WEB_BASE_URL",
+    "UVICORN_HOST",
+    "UVICORN_PORT",
+)
 
 RTSP_PATH_CANDIDATES = (
     "/live/channel0",
@@ -33,16 +55,17 @@ def load_dotenv(env_path: Path | None = None) -> dict[str, str]:
             if candidate.is_file():
                 env_path = candidate
                 break
-    if env_path is None or not env_path.is_file():
-        return {}
-
     values: dict[str, str] = {}
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        values[key.strip()] = value.strip().strip('"').strip("'")
+    if env_path is not None and env_path.is_file():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    for key in ENV_KEYS:
+        if key in os.environ:
+            values[key] = os.environ[key]
     return values
 
 

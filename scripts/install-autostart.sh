@@ -48,8 +48,14 @@ chmod +x scripts/docker-build.sh
 
 # systemd unit
 SERVICE_FILE="/etc/systemd/system/vscam.service"
+is_wsl() {
+  grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null
+}
+
 if [[ "${USE_HOST_NETWORK}" == "auto" ]]; then
-  if [[ "$(uname -s)" == "Linux" ]]; then
+  if is_wsl; then
+    COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.wsl.yml'
+  elif [[ "$(uname -s)" == "Linux" ]]; then
     COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml'
   else
     COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml'

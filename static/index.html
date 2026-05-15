@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VscCam — Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <style>
+    :root {
+      --bg: #0c0f14;
+      --surface: #151a23;
+      --border: #252d3a;
+      --text: #e8ecf1;
+      --muted: #8b95a8;
+      --accent: #3d8bfd;
+      --live: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "DM Sans", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .brand { font-weight: 600; font-size: 1.125rem; }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.live { background: var(--live); box-shadow: 0 0 8px var(--live); }
+    .dot.loading { background: var(--warn); animation: pulse 1.2s ease infinite; }
+    @keyframes pulse { 50% { opacity: 0.4; } }
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .player-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #000;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    video, #liveCanvas {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    #liveCanvas { display: none; }
+    #liveCanvas.active { display: block; }
+    video.hidden { display: none; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      background: rgba(12,15,20,0.88);
+      text-align: center;
+      padding: 1rem;
+    }
+    .overlay.hidden { display: none; }
+    .player-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      padding: 2.5rem 1rem 0.75rem;
+      background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.5) 70%, transparent 100%);
+      pointer-events: auto;
+    }
+    .player-controls button {
+      backdrop-filter: blur(4px);
+    }
+    .player-controls button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hint { font-size: 0.8125rem; color: var(--muted); max-width: 36rem; line-height: 1.5; }
+    .meta { font-size: 0.8125rem; color: var(--muted); word-break: break-all; }
+    button {
+      font: inherit; font-size: 0.875rem;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="brand">VscCam</span>
+    <div class="status">
+      <span class="dot loading" id="dot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="player-wrap">
+      <video id="video" controls autoplay muted playsinline></video>
+      <canvas id="liveCanvas"></canvas>
+      <div class="overlay" id="overlay">
+        <div class="spinner"></div>
+        <span id="overlayText">Starting stream…</span>
+        <p class="hint" id="overlayHint"></p>
+        <p class="hint" id="vlcHint" style="margin-top:0.5rem;font-family:monospace;font-size:0.75rem"></p>
+      </div>
+      <div class="player-controls" id="playerControls">
+        <button type="button" class="primary" id="btnPlay">Play</button>
+        <button type="button" id="btnPause">Pause</button>
+        <button type="button" id="btnMute" disabled>Unmute</button>
+        <button type="button" id="btnRestart">Restart</button>
+        <button type="button" id="btnPopout">Pop out</button>
+        <button type="button" id="btnPip" title="Floating window on top of other apps">Always on top</button>
+        <button type="button" id="btnFullscreen">Fullscreen</button>
+      </div>
+    </div>
+    <p class="meta" id="streamMeta"></p>
+  </main>
+
+  <script>
+    const video = document.getElementById("video");
+    const liveCanvas = document.getElementById("liveCanvas");
+    const canvasCtx = liveCanvas.getContext("2d");
+    const overlay = document.getElementById("overlay");
+    const overlayText = document.getElementById("overlayText");
+    const statusText = document.getElementById("statusText");
+    const dot = document.getElementById("dot");
+    const streamMeta = document.getElementById("streamMeta");
+    const overlayHint = document.getElementById("overlayHint");
+    const vlcHint = document.getElementById("vlcHint");
+    const HLS = "/hls/playlist.m3u8";
+    const LIVE = "/api/live";
+    let hls = null;
+    let mode = null;
+    let liveEdgeTimer = null;
+    let liveAbort = null;
+    let frameCount = 0;
+    let canvasPaused = false;
+    const playerWrap = document.querySelector(".player-wrap");
+    const btnPause = document.getElementById("btnPause");
+    const btnMute = document.getElementById("btnMute");
+    const btnPip = document.getElementById("btnPip");
+    let pipWindow = null;
+    let pipCanvas = null;
+    let pipCtx = null;
+    const hasDocPip = "documentPictureInPicture" in window;
+    const hasVideoPip = () =>
+      document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function";
+
+    function setStatus(state, text) {
+      dot.className = "dot " + (state || "");
+      statusText.textContent = text;
+    }
+
+    function showOverlay(show, text) {
+      overlay.classList.toggle("hidden", !show);
+      if (text) overlayText.textContent = text;
+    }
+
+    function pipActive() {
+      return !!document.pictureInPictureElement || (pipWindow && !pipWindow.closed);
+    }
+
+    function updatePipButton() {
+      const supported = mode === "hls" ? hasVideoPip() : hasDocPip;
+      btnPip.disabled = !supported || frameCount === 0 && mode === "canvas";
+      btnPip.textContent = pipActive() ? "Exit on top" : "Always on top";
+    }
+
+    function closeDocPip() {
+      if (pipWindow && !pipWindow.closed) pipWindow.close();
+      pipWindow = null;
+      pipCanvas = null;
+      pipCtx = null;
+      updatePipButton();
+    }
+
+    function syncPipCanvas() {
+      if (!pipCtx || !liveCanvas.width) return;
+      if (pipCanvas.width !== liveCanvas.width) {
+        pipCanvas.width = liveCanvas.width;
+        pipCanvas.height = liveCanvas.height;
+      }
+      pipCtx.drawImage(liveCanvas, 0, 0);
+    }
+
+    async function enterAlwaysOnTop() {
+      if (pipActive()) {
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else closeDocPip();
+        return;
+      }
+      if (mode === "hls" && hasVideoPip()) {
+        await video.requestPictureInPicture();
+        return;
+      }
+      if (mode === "canvas" && hasDocPip) {
+        pipWindow = await documentPictureInPicture.requestWindow({
+          width: liveCanvas.width || 640,
+          height: liveCanvas.height || 360,
+        });
+        const doc = pipWindow.document;
+        doc.body.style.margin = "0";
+        doc.body.style.background = "#000";
+        doc.body.style.overflow = "hidden";
+        pipCanvas = doc.createElement("canvas");
+        pipCanvas.style.cssText = "width:100%;height:100%;object-fit:contain;display:block";
+        pipCanvas.width = liveCanvas.width || 640;
+        pipCanvas.height = liveCanvas.height || 360;
+        doc.body.append(pipCanvas);
+        pipCtx = pipCanvas.getContext("2d");
+        syncPipCanvas();
+        pipWindow.addEventListener("pagehide", closeDocPip);
+        updatePipButton();
+        return;
+      }
+      showOverlay(true, "Always on top needs Chrome or Edge (Document PiP for live, or HLS mode)");
+    }
+
+    function updateControlsForMode() {
+      if (mode === "hls") {
+        video.controls = true;
+        btnMute.disabled = false;
+        btnPause.textContent = video.paused ? "Play" : "Pause";
+      } else {
+        video.controls = false;
+        btnMute.disabled = true;
+        btnPause.textContent = canvasPaused ? "Resume" : "Pause";
+      }
+      updatePipButton();
+    }
+
+    function stopLiveEdgeTimer() {
+      if (liveEdgeTimer) { clearInterval(liveEdgeTimer); liveEdgeTimer = null; }
+    }
+
+    function findBytes(buf, pat, from = 0) {
+      outer: for (let i = from; i <= buf.length - pat.length; i++) {
+        for (let j = 0; j < pat.length; j++) {
+          if (buf[i + j] !== pat[j]) continue outer;
+        }
+        return i;
+      }
+      return -1;
+    }
+
+    function stopLiveCanvas() {
+      if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+      closeDocPip();
+    }
+
+    function drawJpegFrame(bytes) {
+      const blob = new Blob([bytes], { type: "image/jpeg" });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        if (liveCanvas.width !== img.naturalWidth) {
+          liveCanvas.width = img.naturalWidth;
+          liveCanvas.height = img.naturalHeight;
+        }
+        canvasCtx.drawImage(img, 0, 0);
+        syncPipCanvas();
+        URL.revokeObjectURL(url);
+        frameCount++;
+        if (frameCount === 1) {
+          setStatus("live", "Live");
+          showOverlay(false);
+          updateControlsForMode();
+        }
+      };
+      img.onerror = () => URL.revokeObjectURL(url);
+      img.src = url;
+    }
+
+    async function useLiveCanvas() {
+      if (mode === "canvas" && liveAbort && !canvasPaused) return;
+      mode = "canvas";
+      canvasPaused = false;
+      frameCount = 0;
+      stopLiveEdgeTimer();
+      stopLiveCanvas();
+      if (hls) { hls.destroy(); hls = null; }
+      video.classList.add("hidden");
+      liveCanvas.classList.add("active");
+      updateControlsForMode();
+      setStatus("loading", "Connecting…");
+      showOverlay(true, "Starting live stream…");
+
+      liveAbort = new AbortController();
+      const failTimer = setTimeout(() => {
+        if (frameCount === 0) useHls(true);
+      }, 8000);
+
+      try {
+        const resp = await fetch(LIVE + "?_=" + Date.now(), { signal: liveAbort.signal });
+        if (!resp.ok) throw new Error("stream " + resp.status);
+        const reader = resp.body.getReader();
+        let buf = new Uint8Array();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const next = new Uint8Array(buf.length + value.length);
+          next.set(buf);
+          next.set(value, buf.length);
+          buf = next;
+          let i = 0;
+          while (i < buf.length) {
+            const start = findBytes(buf, [0xff, 0xd8], i);
+            if (start === -1) { buf = buf.slice(i); break; }
+            const end = findBytes(buf, [0xff, 0xd9], start + 2);
+            if (end === -1) { buf = buf.slice(start); break; }
+            drawJpegFrame(buf.slice(start, end + 2));
+            i = end + 2;
+          }
+          if (i > 0 && i < buf.length) buf = buf.slice(i);
+          else if (i >= buf.length) buf = new Uint8Array();
+          if (buf.length > 2_000_000) buf = buf.slice(-200_000);
+        }
+      } catch (e) {
+        if (e.name !== "AbortError" && frameCount === 0) useHls(true);
+      } finally {
+        clearTimeout(failTimer);
+      }
+    }
+
+    async function useHls(fromFallback = false) {
+      if (mode === "hls") return;
+      mode = "hls";
+      closeDocPip();
+      stopLiveEdgeTimer();
+      stopLiveCanvas();
+      liveCanvas.classList.remove("active");
+      video.classList.remove("hidden");
+      updateControlsForMode();
+      if (fromFallback) {
+        showOverlay(true, "Switching to HLS…");
+        await fetch("/api/restart?hls=true", { method: "POST" });
+      }
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          liveSyncDuration: 1,
+          liveMaxLatencyDuration: 3,
+          maxLiveSyncPlaybackRate: 1.25,
+          backBufferLength: 0,
+          liveBackBufferLength: 0,
+          maxBufferLength: 6,
+        });
+        hls.loadSource(HLS);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+          setStatus("live", "Live (HLS)");
+          showOverlay(false);
+          updateControlsForMode();
+          liveEdgeTimer = setInterval(() => {
+            if (hls && video.readyState >= 2) {
+              const end = hls.liveSyncPosition;
+              if (end != null && video.currentTime < end - 2) {
+                video.currentTime = end - 0.5;
+              }
+            }
+          }, 2000);
+        });
+        hls.on(Hls.Events.ERROR, (_, data) => {
+          if (data.fatal) pollStatus();
+        });
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = HLS;
+        video.addEventListener("loadedmetadata", () => {
+          setStatus("live", "Live (HLS)");
+          showOverlay(false);
+        });
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const data = await (await fetch("/api/status")).json();
+        const parts = [];
+        if (data.stream_url) parts.push(data.stream_url);
+        if (data.rtsp_path) parts.push("path: " + data.rtsp_path);
+        streamMeta.textContent = parts.join(" · ");
+
+        if (data.help && data.help.length) {
+          overlayHint.innerHTML = data.help.map((h) => "• " + h).join("<br>");
+        }
+        if (data.vlc_url) vlcHint.textContent = "VLC: " + data.vlc_url;
+
+        if (data.low_latency !== false && data.rtsp_path) {
+          useLiveCanvas();
+          return true;
+        }
+        if (data.playlist_ready) {
+          useHls();
+          return true;
+        }
+        let msg = data.error || "Waiting for stream…";
+        if (data.rtsp_server_up && !data.rtsp_path) {
+          msg = "RTSP port open, but no stream path active yet";
+        }
+        setStatus("loading", "Waiting for camera…");
+        showOverlay(true, msg);
+        return false;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function waitForStream() {
+      for (let i = 0; i < 120; i++) {
+        if (await pollStatus()) return;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      setStatus("", "Unavailable");
+      showOverlay(true, "Camera not streaming. Open live view in the CP Plus app, then click Restart.");
+    }
+
+    document.getElementById("btnPlay").onclick = () => {
+      if (mode === "canvas") {
+        canvasPaused = false;
+        useLiveCanvas();
+      } else {
+        video.play().catch(() => {});
+        updateControlsForMode();
+      }
+    };
+    btnPause.onclick = () => {
+      if (mode === "canvas") {
+        if (canvasPaused) {
+          canvasPaused = false;
+          useLiveCanvas();
+        } else {
+          canvasPaused = true;
+          stopLiveCanvas();
+          setStatus("", "Paused");
+        }
+        updateControlsForMode();
+        return;
+      }
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+      updateControlsForMode();
+    };
+    btnMute.onclick = () => {
+      if (mode !== "hls") return;
+      video.muted = !video.muted;
+      btnMute.textContent = video.muted ? "Unmute" : "Mute";
+    };
+    document.getElementById("btnRestart").onclick = async () => {
+      mode = null;
+      frameCount = 0;
+      canvasPaused = false;
+      stopLiveCanvas();
+      showOverlay(true, "Restarting…");
+      await fetch("/api/restart", { method: "POST" });
+      if (hls) { hls.destroy(); hls = null; }
+      waitForStream();
+    };
+    let popoutWin = null;
+    document.getElementById("btnPopout").onclick = () => {
+      if (popoutWin && !popoutWin.closed) {
+        popoutWin.focus();
+        return;
+      }
+      canvasPaused = true;
+      stopLiveCanvas();
+      if (hls) { hls.destroy(); hls = null; }
+      video.pause();
+      setStatus("", "Playing in pop-out window");
+      showOverlay(true, "Stream moved to pop-out window");
+      popoutWin = window.open(
+        "/popout",
+        "vscam-popout",
+        "width=960,height=580,menubar=no,toolbar=no,location=no,status=no,resizable=yes"
+      );
+      if (!popoutWin) {
+        showOverlay(true, "Allow pop-ups for this site, then try again");
+        canvasPaused = false;
+        waitForStream();
+      } else {
+        const watch = setInterval(() => {
+          if (!popoutWin || popoutWin.closed) {
+            clearInterval(watch);
+            popoutWin = null;
+            canvasPaused = false;
+            showOverlay(false);
+            waitForStream();
+          }
+        }, 500);
+      }
+    };
+    btnPip.onclick = () => enterAlwaysOnTop().catch(() => {
+      showOverlay(true, "Could not open always-on-top window");
+    });
+    document.getElementById("btnFullscreen").onclick = () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else playerWrap.requestFullscreen?.();
+    };
+    video.addEventListener("play", updateControlsForMode);
+    video.addEventListener("pause", updateControlsForMode);
+    video.addEventListener("enterpictureinpicture", updatePipButton);
+    video.addEventListener("leavepictureinpicture", updatePipButton);
+    btnPip.disabled = !hasDocPip && !hasVideoPip();
+
+    waitForStream();
+    setInterval(pollStatus, 10000);
+  </script>
+</body>
+</html>

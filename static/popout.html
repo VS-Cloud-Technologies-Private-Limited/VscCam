@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VscCam — Pop out</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #000; overflow: hidden; }
+    body { display: flex; flex-direction: column; font-family: system-ui, sans-serif; }
+    .bar {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      background: #151a23;
+      border-bottom: 1px solid #252d3a;
+    }
+    button {
+      font: inherit;
+      font-size: 0.8125rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid #252d3a;
+      background: #1e2633;
+      color: #e8ecf1;
+      cursor: pointer;
+    }
+    button:hover { border-color: #3d8bfd; }
+    .stage { flex: 1; position: relative; min-height: 0; }
+    #liveCanvas, video { width: 100%; height: 100%; object-fit: contain; display: block; }
+    #liveCanvas { display: none; }
+    #liveCanvas.active { display: block; }
+    video.hidden { display: none; }
+    .msg {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8b95a8;
+      font-size: 0.875rem;
+    }
+    .msg.hidden { display: none; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+</head>
+<body>
+  <div class="bar">
+    <button type="button" id="btnPlay">Play</button>
+    <button type="button" id="btnPause">Pause</button>
+    <button type="button" id="btnFullscreen">Fullscreen</button>
+    <button type="button" id="btnPip">Always on top</button>
+    <button type="button" id="btnClose">Close window</button>
+  </div>
+  <div class="stage" id="stage">
+    <video id="video" controls autoplay muted playsinline></video>
+    <canvas id="liveCanvas"></canvas>
+    <p class="msg" id="msg">Connecting…</p>
+  </div>
+  <script>
+    const video = document.getElementById("video");
+    const liveCanvas = document.getElementById("liveCanvas");
+    const ctx = liveCanvas.getContext("2d");
+    const msg = document.getElementById("msg");
+    const HLS = "/hls/playlist.m3u8";
+    const LIVE = "/api/live";
+    let hls = null;
+    let mode = null;
+    let liveAbort = null;
+    let paused = false;
+    let pipWindow = null;
+    let pipCanvas = null;
+    let pipCtx = null;
+    const hasDocPip = "documentPictureInPicture" in window;
+    const hasVideoPip = () =>
+      document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function";
+
+    function pipActive() {
+      return !!document.pictureInPictureElement || (pipWindow && !pipWindow.closed);
+    }
+
+    function closeDocPip() {
+      if (pipWindow && !pipWindow.closed) pipWindow.close();
+      pipWindow = null;
+      pipCanvas = null;
+      pipCtx = null;
+      document.getElementById("btnPip").textContent = "Always on top";
+    }
+
+    function syncPipCanvas() {
+      if (!pipCtx || !liveCanvas.width) return;
+      if (pipCanvas.width !== liveCanvas.width) {
+        pipCanvas.width = liveCanvas.width;
+        pipCanvas.height = liveCanvas.height;
+      }
+      pipCtx.drawImage(liveCanvas, 0, 0);
+    }
+
+    async function enterAlwaysOnTop() {
+      if (pipActive()) {
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else closeDocPip();
+        return;
+      }
+      if (mode === "hls" && hasVideoPip()) {
+        await video.requestPictureInPicture();
+        document.getElementById("btnPip").textContent = "Exit on top";
+        return;
+      }
+      if (mode === "canvas" && hasDocPip) {
+        pipWindow = await documentPictureInPicture.requestWindow({
+          width: liveCanvas.width || 640,
+          height: liveCanvas.height || 360,
+        });
+        const doc = pipWindow.document;
+        doc.body.style.margin = "0";
+        doc.body.style.background = "#000";
+        pipCanvas = doc.createElement("canvas");
+        pipCanvas.style.cssText = "width:100%;height:100%;object-fit:contain;display:block";
+        pipCanvas.width = liveCanvas.width || 640;
+        pipCanvas.height = liveCanvas.height || 360;
+        doc.body.append(pipCanvas);
+        pipCtx = pipCanvas.getContext("2d");
+        syncPipCanvas();
+        pipWindow.addEventListener("pagehide", closeDocPip);
+        document.getElementById("btnPip").textContent = "Exit on top";
+      }
+    }
+
+    function findBytes(buf, pat, from = 0) {
+      for (let i = from; i <= buf.length - pat.length; i++) {
+        let ok = true;
+        for (let j = 0; j < pat.length; j++) if (buf[i + j] !== pat[j]) { ok = false; break; }
+        if (ok) return i;
+      }
+      return -1;
+    }
+
+    function stopLive() {
+      if (liveAbort) { liveAbort.abort(); liveAbort = null; }
+    }
+
+    async function useLive() {
+      if (mode === "canvas" && liveAbort && !paused) return;
+      mode = "canvas";
+      paused = false;
+      video.classList.add("hidden");
+      video.controls = false;
+      liveCanvas.classList.add("active");
+      msg.textContent = "Connecting…";
+      msg.classList.remove("hidden");
+      stopLive();
+      if (hls) { hls.destroy(); hls = null; }
+      liveAbort = new AbortController();
+      try {
+        const resp = await fetch(LIVE + "?_=" + Date.now(), { signal: liveAbort.signal });
+        if (!resp.ok) throw new Error(String(resp.status));
+        const reader = resp.body.getReader();
+        let buf = new Uint8Array();
+        let frames = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const n = new Uint8Array(buf.length + value.length);
+          n.set(buf); n.set(value, buf.length);
+          buf = n;
+          let i = 0;
+          while (i < buf.length) {
+            const s = findBytes(buf, [0xff, 0xd8], i);
+            if (s === -1) { buf = buf.slice(i); break; }
+            const e = findBytes(buf, [0xff, 0xd9], s + 2);
+            if (e === -1) { buf = buf.slice(s); break; }
+            const frame = buf.slice(s, e + 2);
+            buf = buf.slice(e + 2);
+            i = 0;
+            const blob = new Blob([frame], { type: "image/jpeg" });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+              if (liveCanvas.width !== img.naturalWidth) {
+                liveCanvas.width = img.naturalWidth;
+                liveCanvas.height = img.naturalHeight;
+              }
+              ctx.drawImage(img, 0, 0);
+              syncPipCanvas();
+              URL.revokeObjectURL(url);
+              if (++frames === 1) msg.classList.add("hidden");
+            };
+            img.src = url;
+          }
+          if (buf.length > 2_000_000) buf = buf.slice(-200_000);
+        }
+      } catch (e) {
+        if (e.name !== "AbortError") useHls();
+      }
+    }
+
+    function useHls() {
+      mode = "hls";
+      stopLive();
+      liveCanvas.classList.remove("active");
+      video.classList.remove("hidden");
+      video.controls = true;
+      msg.textContent = "Loading HLS…";
+      if (Hls.isSupported()) {
+        hls = new Hls({ lowLatencyMode: true });
+        hls.loadSource(HLS);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+          msg.classList.add("hidden");
+        });
+      } else {
+        video.src = HLS;
+        video.addEventListener("loadedmetadata", () => msg.classList.add("hidden"), { once: true });
+      }
+    }
+
+    async function start() {
+      const st = await (await fetch("/api/status")).json();
+      if (st.low_latency !== false && st.rtsp_path) useLive();
+      else if (st.playlist_ready) useHls();
+      else {
+        await fetch("/api/restart", { method: "POST" });
+        setTimeout(start, 2000);
+      }
+    }
+
+    document.getElementById("btnPlay").onclick = () => { paused = false; start(); };
+    document.getElementById("btnPause").onclick = () => {
+      if (mode === "canvas") {
+        paused = !paused;
+        if (paused) stopLive();
+        else useLive();
+        document.getElementById("btnPause").textContent = paused ? "Resume" : "Pause";
+      } else {
+        if (video.paused) video.play();
+        else video.pause();
+      }
+    };
+    document.getElementById("btnFullscreen").onclick = () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.getElementById("stage").requestFullscreen?.();
+    };
+    document.getElementById("btnPip").onclick = () => enterAlwaysOnTop().catch(() => {});
+    document.getElementById("btnPip").disabled = !hasDocPip && !hasVideoPip();
+    video.addEventListener("leavepictureinpicture", () => {
+      document.getElementById("btnPip").textContent = "Always on top";
+    });
+    document.getElementById("btnClose").onclick = () => window.close();
+    window.addEventListener("beforeunload", () => { closeDocPip(); stopLive(); });
+    start();
+  </script>
+</body>
+</html>

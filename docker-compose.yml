@@ -1,0 +1,14 @@
+services:
+  vscam:
+    build: .
+    container_name: vscam
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./hls:/app/hls
+    # Use host networking on Linux so the container can reach cameras on your LAN.
+    # Comment out `ports` above when using host mode (port mapping is ignored).
+    # network_mode: host

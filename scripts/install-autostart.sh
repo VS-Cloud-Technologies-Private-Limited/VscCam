@@ -43,7 +43,8 @@ fi
 mkdir -p "${INSTALL_DIR}/hls"
 
 cd "${INSTALL_DIR}"
-chmod +x scripts/docker-build.sh
+chmod +x scripts/*.sh
+docker rm -f vscam 2>/dev/null || true
 ./scripts/docker-build.sh
 
 # systemd unit
@@ -75,6 +76,7 @@ sed \
 
 systemctl daemon-reload
 systemctl enable vscam.service
+docker rm -f vscam 2>/dev/null || true
 systemctl restart vscam.service
 
 echo ""

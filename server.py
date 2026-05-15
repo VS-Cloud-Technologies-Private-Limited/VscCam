@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import atexit
+import os
 import signal
 import subprocess
 import threading
@@ -311,9 +312,13 @@ def status() -> JSONResponse:
     port = env.get("RTSP_PORT", "5543")
     path = active_rtsp_path or env.get("RTSP_PATH", "/cam/realmonitor?channel=1&subtype=0")
     vlc_url = f"rtsp://{host}:{port}{path}"
+    host_ip = env.get("HOST_IP") or os.environ.get("HOST_IP", "")
+    web_url = os.environ.get("WEB_BASE_URL") or (f"http://{host_ip}:8765" if host_ip else "")
     return JSONResponse(
         {
             "ffmpeg_running": running,
+            "web_url": web_url,
+            "host_ip": host_ip or None,
             "playlist_ready": playlist_ready(),
             "rtsp_server_up": rtsp_server_up(),
             "rtsp_path": active_rtsp_path,

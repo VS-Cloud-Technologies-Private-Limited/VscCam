@@ -97,22 +97,32 @@ Pre-built image (after CI publish):
 ghcr.io/vs-cloud-technologies-private-limited/vscam:latest
 ```
 
-### Run manually
+### Run on your LAN (recommended)
+
+Set this machine’s IP in `.env` (example: **192.168.60.51**), then start **LAN mode** (host network — reaches the camera and is visible on Wi‑Fi):
 
 ```bash
 cp .env.example .env
-# Edit .env
+# Edit .env: HOST_IP=192.168.60.51, RTSP_HOST=<camera-ip>, USERNAME, PASSWORD
 
+chmod +x scripts/run-lan.sh
+./scripts/run-lan.sh
+```
+
+| Where | URL |
+|-------|-----|
+| This PC | http://127.0.0.1:8765 |
+| Phone / TV on same Wi‑Fi | **http://192.168.60.51:8765** |
+
+`GET /api/status` returns `web_url` with the same address.
+
+### Run locally only (bridge)
+
+```bash
 docker compose up --build -d
 ```
 
-Open **http://localhost:8765**
-
-**Linux + LAN cameras** — use host networking so the container can reach your camera:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.host.yml up -d --build
-```
+Open **http://localhost:8765** (may not reach cameras on all Docker setups).
 
 Run discovery inside the container:
 

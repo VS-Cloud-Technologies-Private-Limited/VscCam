@@ -7,9 +7,11 @@ services:
     env_file:
       - .env
     ports:
-      - "8765:8765"
+      - "0.0.0.0:8765:8765"
     volumes:
       - ./hls:/app/hls
-    # Use host networking on Linux so the container can reach cameras on your LAN.
-    # Comment out `ports` above when using host mode (port mapping is ignored).
-    # network_mode: host
+    environment:
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: "8765"
+      WEB_BASE_URL: http://${HOST_IP:-127.0.0.1}:8765
+    # For LAN (camera + http://192.168.60.51:8765), use docker-compose.lan.yml — see README.

@@ -50,13 +50,13 @@ chmod +x scripts/docker-build.sh
 SERVICE_FILE="/etc/systemd/system/vscam.service"
 if [[ "${USE_HOST_NETWORK}" == "auto" ]]; then
   if [[ "$(uname -s)" == "Linux" ]]; then
-    COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml'
+    COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml'
   else
     COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml'
   fi
 else
   if [[ "${USE_HOST_NETWORK}" == "1" || "${USE_HOST_NETWORK}" == "true" ]]; then
-    COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml'
+    COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml'
   else
     COMPOSE_ENV='Environment=COMPOSE_FILE=docker-compose.yml'
   fi
@@ -64,7 +64,7 @@ fi
 
 sed \
   -e "s|WorkingDirectory=/opt/vscam|WorkingDirectory=${INSTALL_DIR}|" \
-  -e "s|Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml|${COMPOSE_ENV}|" \
+  -e "s|Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml|${COMPOSE_ENV}|" \
   "${INSTALL_DIR}/deploy/vscam.service" > "${SERVICE_FILE}"
 
 systemctl daemon-reload

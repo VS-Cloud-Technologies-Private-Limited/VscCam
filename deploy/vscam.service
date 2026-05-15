@@ -11,7 +11,7 @@ RemainAfterExit=yes
 # Set by scripts/install-autostart.sh (default: /opt/vscam)
 WorkingDirectory=/opt/vscam
 # Use host networking on Linux so the container can reach LAN cameras
-Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.host.yml
+Environment=COMPOSE_FILE=docker-compose.yml:docker-compose.lan.yml
 Environment=COMPOSE_PROJECT_NAME=vscam
 ExecStartPre=/usr/bin/docker compose pull --ignore-pull-failures
 ExecStart=/usr/bin/docker compose up -d --remove-orphans

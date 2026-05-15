@@ -1,0 +1,13 @@
+# LAN mode: host network so the container shares 192.168.60.x with your PC and can
+# reach the camera and be opened at http://192.168.60.51:8765 from phones/TVs on Wi‑Fi.
+#
+# Usage:
+#   Set HOST_IP=192.168.60.51 in .env, then:
+#   docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build
+services:
+  vscam:
+    network_mode: host
+    environment:
+      UVICORN_HOST: 0.0.0.0
+      UVICORN_PORT: "8765"
+      WEB_BASE_URL: http://${HOST_IP:-192.168.60.51}:8765

@@ -1,5 +1,5 @@
-# Override for Linux hosts: container uses the host network so it can reach cameras on LAN.
-# Usage: docker compose -f docker-compose.yml -f docker-compose.host.yml up -d
+# Deprecated: use docker-compose.lan.yml (sets HOST_IP / WEB_BASE_URL for http://192.168.60.51:8765).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
 services:
   vscam:
     network_mode: host

@@ -4,6 +4,8 @@
 
 Discover and play **CP Plus** (and other) Wi‑Fi camera streams on your local network. Includes RTSP/ONVIF discovery, a low‑latency web player, pop‑out window, and always‑on‑top Picture‑in‑Picture.
 
+**Repository:** https://github.com/VS-Cloud-Technologies-Private-Limited/VscCam
+
 ## Features
 
 - **Network discovery** — scan the LAN for RTSP cameras (CP Plus mode, ONVIF, port-range probe)
